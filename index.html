@@ -218,75 +218,76 @@
             if (actionsTimer) clearTimeout(actionsTimer);
         }
 
-        // Рисование масок без трекинга – просто в центре экрана или в случайном месте
         function drawMask(maskType) {
             if (!maskType) return;
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            // Выбираем позицию: немного смещаем случайно для забавы
+
+            // Маска в верхней трети экрана — там лицо при селфи с руки
             const centerX = canvas.width / 2;
-            const centerY = canvas.height * 0.4; // чуть выше центра
-            const offsetX = (Math.random() - 0.5) * canvas.width * 0.2;
-            const offsetY = (Math.random() - 0.5) * canvas.height * 0.1;
+            const centerY = canvas.height * 0.35;
+            const offsetX = (Math.random() - 0.5) * canvas.width * 0.15;
+            const offsetY = (Math.random() - 0.5) * canvas.height * 0.05;
             const x = centerX + offsetX;
             const y = centerY + offsetY;
-            const s = Math.min(canvas.width, canvas.height) * 0.001; // масштаб
+
+            // Масштаб стал крупнее
+            const s = Math.min(canvas.width, canvas.height) * 0.0015;
 
             ctx.save();
             ctx.translate(x, y);
-            // Для масок, которые должны смотреться «на лице», зеркалим, как и всё
             ctx.scale(-1, 1);
             ctx.strokeStyle = 'rgba(0,0,0,0.9)';
             ctx.fillStyle = 'rgba(0,0,0,0.8)';
-            ctx.lineWidth = Math.max(2, 4 * s);
+            ctx.lineWidth = Math.max(3, 6 * s);
 
             switch(maskType) {
                 case 'glasses':
-                    const ew = 50 * s, eh = 30 * s, rad = 22 * s;
+                    const ew = 55 * s, rad = 25 * s;
                     ctx.beginPath();
-                    ctx.arc(-ew, -eh*0.2, rad, 0, Math.PI*2);
+                    ctx.arc(-ew, -10*s, rad, 0, Math.PI*2);
                     ctx.stroke();
                     ctx.beginPath();
-                    ctx.arc(ew, -eh*0.2, rad, 0, Math.PI*2);
+                    ctx.arc(ew, -10*s, rad, 0, Math.PI*2);
                     ctx.stroke();
                     ctx.beginPath();
-                    ctx.moveTo(-ew-rad, -eh*0.2);
-                    ctx.lineTo(ew+rad, -eh*0.2);
+                    ctx.moveTo(-ew-rad, -10*s);
+                    ctx.lineTo(ew+rad, -10*s);
                     ctx.stroke();
                     break;
                 case 'mustache':
                     ctx.beginPath();
-                    ctx.moveTo(-30*s, 10*s);
-                    ctx.quadraticCurveTo(0, 30*s, 30*s, 10*s);
+                    ctx.moveTo(-35*s, 15*s);
+                    ctx.quadraticCurveTo(0, 35*s, 35*s, 15*s);
                     ctx.stroke();
                     ctx.beginPath();
-                    ctx.arc(-15*s, 8*s, 5*s, 0, Math.PI);
+                    ctx.arc(-18*s, 12*s, 6*s, 0, Math.PI);
                     ctx.stroke();
                     ctx.beginPath();
-                    ctx.arc(15*s, 8*s, 5*s, 0, Math.PI);
+                    ctx.arc(18*s, 12*s, 6*s, 0, Math.PI);
                     ctx.stroke();
                     break;
                 case 'bunny_ears':
                     ctx.save();
-                    ctx.translate(0, -40*s);
+                    ctx.translate(0, -45*s);
                     ctx.scale(1, 1.8);
                     ctx.beginPath();
-                    ctx.ellipse(-20*s, 0, 8*s, 25*s, 0, 0, Math.PI*2);
+                    ctx.ellipse(-22*s, 0, 10*s, 30*s, 0, 0, Math.PI*2);
                     ctx.stroke();
                     ctx.beginPath();
-                    ctx.ellipse(20*s, 0, 8*s, 25*s, 0, 0, Math.PI*2);
+                    ctx.ellipse(22*s, 0, 10*s, 30*s, 0, 0, Math.PI*2);
                     ctx.stroke();
                     ctx.restore();
                     break;
                 case 'hat':
                     ctx.fillStyle = '#333';
-                    const hatW = 60*s, hatH = 40*s;
-                    ctx.fillRect(-hatW/2, -hatH-10*s, hatW, hatH);
-                    ctx.fillRect(-hatW/2-15*s, -20*s, hatW+30*s, 10*s);
+                    const hatW = 70*s, hatH = 45*s;
+                    ctx.fillRect(-hatW/2, -hatH-15*s, hatW, hatH);
+                    ctx.fillRect(-hatW/2-20*s, -25*s, hatW+40*s, 12*s);
                     break;
                 case 'clown_nose':
                     ctx.fillStyle = 'red';
                     ctx.beginPath();
-                    ctx.arc(0, 5*s, 12*s, 0, Math.PI*2);
+                    ctx.arc(0, 8*s, 14*s, 0, Math.PI*2);
                     ctx.fill();
                     ctx.strokeStyle = 'black';
                     ctx.lineWidth = 2;
