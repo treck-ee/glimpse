@@ -23,7 +23,7 @@
         video, canvas {
             position: absolute;
             width: 100%; height: 100%;
-            object-fit: cover;
+            object-fit: contain;   /* лицо полностью */
             transform: scaleX(-1);  /* зеркалим */
         }
         canvas { z-index: 5; }
@@ -218,11 +218,11 @@
             if (actionsTimer) clearTimeout(actionsTimer);
         }
 
-        // Рисуем маску на canvas (в верхней трети, подстраиваясь под размер canvas)
+        // Рисуем маску на canvas (в верхней трети, где обычно лицо)
         function drawMask(maskType) {
             if (!maskType) return;
             ctx.clearRect(0, 0, canvas.width, canvas.height);
-            // Верхняя треть экрана — типичное положение лица при селфи с руки
+            // Верхняя треть изображения — типичное положение лица при селфи с руки
             const cx = canvas.width / 2;
             const cy = canvas.height * 0.35;
             const s = Math.min(canvas.width, canvas.height) * 0.0015;
