@@ -20,14 +20,17 @@
             align-items: center;
             justify-content: center;
         }
-        video, canvas {
-            position: absolute;
-            width: 100%; height: 100%;
-            object-fit: cover;
-            transform: scaleX(-1);
+        /* Видео скрыто, используется только для захвата */
+        video {
+            display: none;
         }
-        canvas { z-index: 5; }
-        video { z-index: 1; }
+        /* Canvas теперь единственный видимый элемент */
+        canvas {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;   /* лицо полностью, без обрезки */
+            background: #000;
+        }
         #flash-overlay {
             position: absolute;
             top: 50%; left: 50%;
@@ -187,6 +190,7 @@
         let actionsTimer = null;
         let isFlashActive = false;
         let flashMaskType = null;
+        let animationFrameId = null;
 
         const MASK_TYPES = ['glasses', 'mustache', 'bunny_ears', 'hat', 'clown_nose'];
 
@@ -218,24 +222,17 @@
             if (actionsTimer) clearTimeout(actionsTimer);
         }
 
+        // Рисуем маску на canvas (координаты в пространстве canvas)
         function drawMask(maskType) {
             if (!maskType) return;
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-            // Маска в верхней трети экрана — там лицо при селфи с руки
-            const centerX = canvas.width / 2;
-            const centerY = canvas.height * 0.35;
-            const offsetX = (Math.random() - 0.5) * canvas.width * 0.15;
-            const offsetY = (Math.random() - 0.5) * canvas.height * 0.05;
-            const x = centerX + offsetX;
-            const y = centerY + offsetY;
-
-            // Масштаб стал крупнее
+            // Центр маски: верхняя треть canvas (где лицо при селфи с руки)
+            const cx = canvas.width / 2;
+            const cy = canvas.height * 0.35;
             const s = Math.min(canvas.width, canvas.height) * 0.0015;
 
             ctx.save();
-            ctx.translate(x, y);
-            ctx.scale(-1, 1);
+            ctx.translate(cx, cy);
+            ctx.scale(-1, 1);  // зеркалим, чтобы маска смотрелась правильно
             ctx.strokeStyle = 'rgba(0,0,0,0.9)';
             ctx.fillStyle = 'rgba(0,0,0,0.8)';
             ctx.lineWidth = Math.max(3, 6 * s);
@@ -297,6 +294,29 @@
             ctx.restore();
         }
 
+        // Главный цикл отрисовки
+        function drawFrame() {
+            if (!video.videoWidth || !video.videoHeight) {
+                animationFrameId = requestAnimationFrame(drawFrame);
+                return;
+            }
+
+            // Рисуем видео на canvas зеркально
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.save();
+            ctx.translate(canvas.width, 0);
+            ctx.scale(-1, 1);
+            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+            ctx.restore();
+
+            // Если активна маска, рисуем поверх
+            if (isFlashActive && flashMaskType) {
+                drawMask(flashMaskType);
+            }
+
+            animationFrameId = requestAnimationFrame(drawFrame);
+        }
+
         function triggerFlash() {
             if (flashTimer) return;
             lifts++;
@@ -305,10 +325,9 @@
             if (currentLens === 'masks') {
                 isFlashActive = true;
                 flashMaskType = MASK_TYPES[Math.floor(Math.random() * MASK_TYPES.length)];
-                drawMask(flashMaskType);
                 flashTimer = setTimeout(() => {
-                    ctx.clearRect(0, 0, canvas.width, canvas.height);
                     isFlashActive = false;
+                    flashMaskType = null;
                     flashTimer = null;
                     postActions.classList.add('show');
                     actionsTimer = setTimeout(hideActions, 2500);
@@ -352,7 +371,9 @@
                 btn.classList.add('active');
                 currentLens = btn.dataset.lens;
                 hideActions();
-                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                // Очищаем маску при смене линзы
+                isFlashActive = false;
+                flashMaskType = null;
             });
         });
 
@@ -373,6 +394,9 @@
                 video.onloadedmetadata = () => {
                     canvas.width = video.videoWidth;
                     canvas.height = video.videoHeight;
+                    // Запускаем цикл отрисовки
+                    if (animationFrameId) cancelAnimationFrame(animationFrameId);
+                    animationFrameId = requestAnimationFrame(drawFrame);
                 };
             } catch (err) {
                 console.error(err);
