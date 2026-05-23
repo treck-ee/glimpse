@@ -1,0 +1,269 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>Glimpse – зеркало осознанности</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body {
+            width: 100%; height: 100%;
+            overflow: hidden;
+            background: #000;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            touch-action: manipulation; /* убирает зум при двойном тапе */
+        }
+        #mirror-container {
+            position: relative;
+            width: 100%; height: 100%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        video {
+            position: absolute;
+            width: 100%; height: 100%;
+            object-fit: cover;
+            transform: scaleX(-1); /* зеркалим */
+        }
+        /* Вспышка – текст на полсекунды */
+        #flash-overlay {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 2.4rem;
+            font-weight: bold;
+            color: white;
+            text-shadow: 0 0 20px rgba(0,0,0,0.8);
+            opacity: 0;
+            transition: opacity 0.1s ease;
+            pointer-events: none;
+            white-space: nowrap;
+            z-index: 10;
+        }
+        /* Кнопки после вспышки */
+        .post-flash-actions {
+            position: absolute;
+            bottom: 80px;
+            left: 0; right: 0;
+            display: flex;
+            justify-content: space-around;
+            opacity: 0;
+            transition: opacity 0.2s;
+            pointer-events: none;
+            z-index: 20;
+        }
+        .post-flash-actions.show {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .action-btn {
+            background: rgba(255,255,255,0.9);
+            color: #111;
+            border: none;
+            padding: 14px 28px;
+            border-radius: 50px;
+            font-size: 1.2rem;
+            font-weight: 600;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+        }
+        /* Статистика */
+        .stats {
+            position: absolute;
+            top: 30px;
+            left: 20px;
+            color: white;
+            font-size: 0.9rem;
+            background: rgba(0,0,0,0.5);
+            padding: 8px 14px;
+            border-radius: 20px;
+            z-index: 30;
+            backdrop-filter: blur(10px);
+        }
+        /* Переключатель линз */
+        .lens-switcher {
+            position: absolute;
+            bottom: 25px;
+            left: 20px; right: 20px;
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            z-index: 30;
+        }
+        .lens-btn {
+            background: rgba(255,255,255,0.2);
+            color: white;
+            border: 2px solid transparent;
+            padding: 12px 18px;
+            border-radius: 30px;
+            font-size: 0.9rem;
+            backdrop-filter: blur(10px);
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        .lens-btn.active {
+            background: rgba(255,255,255,0.9);
+            color: #000;
+            border-color: white;
+        }
+        /* Невидимая область для клика (имитация поднятия) */
+        #lift-trigger {
+            position: absolute;
+            top: 0; left: 0;
+            width: 100%; height: 70%;
+            z-index: 15;
+        }
+        .hidden-camera-warning {
+            position: absolute;
+            top: 50%; left: 50%;
+            transform: translate(-50%, -50%);
+            color: white;
+            font-size: 1.2rem;
+            text-align: center;
+            background: rgba(0,0,0,0.8);
+            padding: 20px;
+            border-radius: 16px;
+        }
+    </style>
+</head>
+<body>
+    <div id="mirror-container">
+        <video id="video" autoplay playsinline muted></video>
+        <div id="flash-overlay"></div>
+        <div class="stats" id="stats">🔍 0 | ✅ 0 | 📱 0</div>
+
+        <!-- Область касания = поднятие телефона -->
+        <div id="lift-trigger"></div>
+
+        <!-- Кнопки выбора после вспышки -->
+        <div class="post-flash-actions" id="post-actions">
+            <button class="action-btn" id="btn-accept">👌 Принято</button>
+            <button class="action-btn" id="btn-unlock">📱 Разблокировка</button>
+        </div>
+
+        <!-- Выбор линзы -->
+        <div class="lens-switcher">
+            <button class="lens-btn active" data-lens="intention">✨ Намерение</button>
+            <button class="lens-btn" data-lens="knowledge">📚 Знания</button>
+            <button class="lens-btn" data-lens="anchor">❤️ Якорь</button>
+        </div>
+    </div>
+
+    <script>
+        const video = document.getElementById('video');
+        const flashOverlay = document.getElementById('flash-overlay');
+        const postActions = document.getElementById('post-actions');
+        const statsDiv = document.getElementById('stats');
+        const lensButtons = document.querySelectorAll('.lens-btn');
+
+        // Статистика
+        let lifts = 0, accepts = 0, unlocks = 0;
+
+        // Текущая линза
+        let currentLens = 'intention';
+
+        // Контент для линз
+        const content = {
+            intention: [
+                "Я спокоен", "Я всё успеваю", "Мне хватает времени",
+                "Я тот, кто действует", "Осанка", "Плечи расправлены",
+                "Улыбнись", "Вдох – выдох"
+            ],
+            knowledge: [
+                "Петрикор – запах земли после дождя",
+                "Сатори – внезапное просветление",
+                "Эвдемония – счастье как цель жизни",
+                "Паросмия – искажение обоняния",
+                "Квант – минимальная порция энергии"
+            ],
+            anchor: [
+                "Подумай о маме", "Позвони другу", "Вспомни лучший момент",
+                "Кого ты любишь?", "Кто в тебя верит?"
+            ]
+        };
+
+        // Таймер вспышки
+        let flashTimer = null;
+        let actionsTimer = null;
+
+        // Обновление статистики на экране
+        function updateStats() {
+            statsDiv.textContent = `🔍 ${lifts} | ✅ ${accepts} | 📱 ${unlocks}`;
+        }
+
+        // Скрыть кнопки выбора
+        function hideActions() {
+            postActions.classList.remove('show');
+            if (actionsTimer) clearTimeout(actionsTimer);
+        }
+
+        // Показать вспышку
+        function triggerFlash() {
+            if (flashTimer) return; // уже активна
+
+            // Выбрать случайный элемент из текущей линзы
+            const items = content[currentLens];
+            const text = items[Math.floor(Math.random() * items.length)];
+
+            flashOverlay.textContent = text;
+            flashOverlay.style.opacity = '1';
+            lifts++;
+            updateStats();
+
+            // Убрать вспышку через 400 мс
+            flashTimer = setTimeout(() => {
+                flashOverlay.style.opacity = '0';
+                flashTimer = null;
+
+                // Показать кнопки выбора на 2 секунды
+                postActions.classList.add('show');
+                actionsTimer = setTimeout(hideActions, 2500);
+            }, 400);
+        }
+
+        // Обработчики кнопок выбора
+        document.getElementById('btn-accept').addEventListener('click', (e) => {
+            e.stopPropagation();
+            accepts++;
+            updateStats();
+            hideActions();
+        });
+        document.getElementById('btn-unlock').addEventListener('click', (e) => {
+            e.stopPropagation();
+            unlocks++;
+            updateStats();
+            hideActions();
+        });
+
+        // Касание области "поднятия"
+        document.getElementById('lift-trigger').addEventListener('click', triggerFlash);
+
+        // Смена линз
+        lensButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                lensButtons.forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                currentLens = btn.dataset.lens;
+                hideActions(); // скрываем кнопки, если были открыты
+            });
+        });
+
+        // Запуск камеры
+        async function startCamera() {
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'user', width: { ideal: 720 }, height: { ideal: 1280 } },
+                    audio: false
+                });
+                video.srcObject = stream;
+            } catch (err) {
+                console.error(err);
+                document.getElementById('mirror-container').innerHTML += 
+                    '<div class="hidden-camera-warning">Не удалось получить доступ к камере. Разрешите камеру и обновите страницу.<br>Работает только по HTTPS или localhost.</div>';
+            }
+        }
+        startCamera();
+    </script>
+</body>
+</html>
