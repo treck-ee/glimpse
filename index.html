@@ -4,12 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Glimpse – зеркало осознанности</title>
-    <!-- PWA -->
-    <link rel="manifest" href="manifest.json">
-    <meta name="mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black">
-    <link rel="apple-touch-icon" href="icon-192.png">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body {
@@ -30,30 +24,31 @@
             position: absolute;
             width: 100%; height: 100%;
             object-fit: cover;
-            transform: scaleX(-1); /* зеркалим */
+            transform: scaleX(-1);
         }
         canvas {
-            z-index: 5; /* выше видео, но ниже оверлеев */
+            z-index: 5;
         }
         video {
             z-index: 1;
         }
-        /* Вспышка – текст (для немаскированных линз) */
+        /* Адаптивный текст вспышки */
         #flash-overlay {
             position: absolute;
             top: 50%; left: 50%;
             transform: translate(-50%, -50%);
-            font-size: 2.4rem;
+            font-size: clamp(1.5rem, 8vw, 3rem); /* не больше 3rem, не меньше 1.5rem */
             font-weight: bold;
             color: white;
             text-shadow: 0 0 20px rgba(0,0,0,0.8);
             opacity: 0;
             transition: opacity 0.1s ease;
             pointer-events: none;
-            white-space: nowrap;
+            white-space: normal; /* разрешаем перенос */
+            text-align: center;
+            max-width: 90vw;
             z-index: 10;
         }
-        /* Кнопки после вспышки */
         .post-flash-actions {
             position: absolute;
             bottom: 80px;
@@ -80,7 +75,6 @@
             backdrop-filter: blur(10px);
             box-shadow: 0 4px 15px rgba(0,0,0,0.3);
         }
-        /* Статистика */
         .stats {
             position: absolute;
             top: 30px;
@@ -93,7 +87,6 @@
             z-index: 30;
             backdrop-filter: blur(10px);
         }
-        /* Переключатель линз */
         .lens-switcher {
             position: absolute;
             bottom: 25px;
@@ -120,7 +113,6 @@
             color: #000;
             border-color: white;
         }
-        /* Невидимая область для клика (имитация поднятия) */
         #lift-trigger {
             position: absolute;
             top: 0; left: 0;
@@ -139,7 +131,6 @@
             border-radius: 16px;
             z-index: 50;
         }
-        /* Ползунок скорости */
         .speed-control {
             position: absolute;
             top: 80px;
@@ -158,6 +149,21 @@
         .speed-control input {
             width: 120px;
         }
+        /* Сообщение об ошибке FaceFilter */
+        #ff-error {
+            position: absolute;
+            top: 40%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            color: #ff0;
+            background: rgba(0,0,0,0.7);
+            padding: 12px;
+            border-radius: 12px;
+            z-index: 50;
+            display: none;
+            font-size: 0.9rem;
+            text-align: center;
+        }
     </style>
 </head>
 <body>
@@ -165,24 +171,21 @@
         <video id="video" autoplay playsinline muted></video>
         <canvas id="overlay-canvas"></canvas>
         <div id="flash-overlay"></div>
+        <div id="ff-error">😕 Не удалось загрузить маски<br>Проверьте интернет-соединение</div>
         <div class="stats" id="stats">🔍 0 | ✅ 0 | 📱 0</div>
 
-        <!-- Ползунок длительности вспышки -->
         <div class="speed-control">
             <label for="flash-speed">⏱️ Вспышка (сек): <span id="speed-value">0.6</span></label>
             <input type="range" id="flash-speed" min="0.2" max="2.0" step="0.1" value="0.6">
         </div>
 
-        <!-- Область касания = поднятие телефона -->
         <div id="lift-trigger"></div>
 
-        <!-- Кнопки выбора после вспышки -->
         <div class="post-flash-actions" id="post-actions">
             <button class="action-btn" id="btn-accept">👌 Принято</button>
             <button class="action-btn" id="btn-unlock">📱 Разблокировка</button>
         </div>
 
-        <!-- Выбор линзы -->
         <div class="lens-switcher">
             <button class="lens-btn active" data-lens="intention">✨ Намерение</button>
             <button class="lens-btn" data-lens="knowledge">📚 Знания</button>
@@ -191,8 +194,17 @@
         </div>
     </div>
 
-    <!-- Jeeliz FaceFilter -->
-    <script src="https://cdn.jsdelivr.net/npm/jeeliz-facefilter@latest/dist/jeelizFaceFilter.js"></script>
+    <!-- Jeeliz FaceFilter с резервным вариантом -->
+    <script>
+        // Проверим, загрузился ли Jeeliz, если нет – покажем ошибку
+        window.onerror = function(msg) {
+            if (msg.includes('JeelizFaceFilter')) {
+                document.getElementById('ff-error').style.display = 'block';
+            }
+        };
+    </script>
+    <script src="https://cdn.jsdelivr.net/npm/jeeliz-facefilter@latest/dist/jeelizFaceFilter.js" 
+            onerror="document.getElementById('ff-error').style.display='block'"></script>
 
     <script>
         const video = document.getElementById('video');
@@ -202,26 +214,17 @@
         const postActions = document.getElementById('post-actions');
         const statsDiv = document.getElementById('stats');
         const lensButtons = document.querySelectorAll('.lens-btn');
+        const ffErrorDiv = document.getElementById('ff-error');
 
-        // Статистика
         let lifts = 0, accepts = 0, unlocks = 0;
-
-        // Текущая линза
         let currentLens = 'intention';
-
-        // Длительность вспышки в миллисекундах
         let flashDuration = 600;
-
-        // Флаги и таймеры
         let flashTimer = null;
         let actionsTimer = null;
         let isFlashActive = false;
-
-        // Для Jeeliz
         let faceFilterReady = false;
         const MASK_TYPES = ['glasses', 'mustache', 'bunny_ears', 'hat', 'clown_nose'];
 
-        // Контент для текстовых линз
         const content = {
             intention: [
                 "Я спокоен", "Я всё успеваю", "Мне хватает времени",
@@ -241,31 +244,32 @@
             ]
         };
 
-        // Обновление статистики
         function updateStats() {
             statsDiv.textContent = `🔍 ${lifts} | ✅ ${accepts} | 📱 ${unlocks}`;
         }
 
-        // Скрыть кнопки выбора
         function hideActions() {
             postActions.classList.remove('show');
             if (actionsTimer) clearTimeout(actionsTimer);
         }
 
-        // Показать вспышку
         function triggerFlash() {
-            if (flashTimer) return; // уже активна
-
+            if (flashTimer) return;
             lifts++;
             updateStats();
 
-            // Если активна линза масок — включаем отрисовку маски на время вспышки
             if (currentLens === 'masks') {
                 if (!faceFilterReady) {
                     initFaceFilter();
+                    // Если после попытки всё равно не готов – отменяем вспышку
+                    if (!faceFilterReady) {
+                        ffErrorDiv.style.display = 'block';
+                        setTimeout(() => ffErrorDiv.style.display = 'none', 3000);
+                        return;
+                    }
                 }
                 isFlashActive = true;
-                window._flashMaskType = null; // сброс, чтобы выбрать новую маску
+                window._flashMaskType = null;
                 flashTimer = setTimeout(() => {
                     isFlashActive = false;
                     flashTimer = null;
@@ -275,7 +279,6 @@
                 return;
             }
 
-            // Текстовые линзы
             const items = content[currentLens];
             if (items) {
                 const text = items[Math.floor(Math.random() * items.length)];
@@ -291,7 +294,6 @@
             }, flashDuration);
         }
 
-        // Обработчики кнопок после вспышки
         document.getElementById('btn-accept').addEventListener('click', (e) => {
             e.stopPropagation();
             accepts++;
@@ -305,24 +307,20 @@
             hideActions();
         });
 
-        // Касание невидимой области — вызов вспышки
         document.getElementById('lift-trigger').addEventListener('click', triggerFlash);
 
-        // Переключение линз
         lensButtons.forEach(btn => {
             btn.addEventListener('click', () => {
                 lensButtons.forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
                 currentLens = btn.dataset.lens;
                 hideActions();
-                // Если выбрали маски и трекер ещё не запущен — инициализируем
                 if (currentLens === 'masks' && !faceFilterReady) {
                     initFaceFilter();
                 }
             });
         });
 
-        // Ползунок регулировки длительности вспышки
         const speedSlider = document.getElementById('flash-speed');
         const speedValue = document.getElementById('speed-value');
         speedSlider.addEventListener('input', (e) => {
@@ -330,22 +328,27 @@
             speedValue.textContent = e.target.value;
         });
 
-        // Инициализация Jeeliz FaceFilter и программная отрисовка масок
         function initFaceFilter() {
             if (faceFilterReady) return;
+            if (typeof JeelizFaceFilter === 'undefined') {
+                ffErrorDiv.style.display = 'block';
+                setTimeout(() => ffErrorDiv.style.display = 'none', 3000);
+                return;
+            }
             canvas.width = video.videoWidth || 640;
             canvas.height = video.videoHeight || 480;
 
             JeelizFaceFilter.init({
                 canvas: canvas,
                 video: video,
-                callbackReady: function(errCode, spec) {
+                callbackReady: function(errCode) {
                     if (errCode) {
                         console.error('JeelizFaceFilter error:', errCode);
+                        ffErrorDiv.style.display = 'block';
                         return;
                     }
                     faceFilterReady = true;
-                    console.log('FaceFilter готов');
+                    ffErrorDiv.style.display = 'none';
                 },
                 callbackTrack: function(detectState) {
                     ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -354,22 +357,20 @@
                         return;
                     }
 
-                    // Выбираем тип маски один раз за вспышку
                     if (!window._flashMaskType) {
                         window._flashMaskType = MASK_TYPES[Math.floor(Math.random() * MASK_TYPES.length)];
                     }
                     const maskType = window._flashMaskType;
-
                     const x = detectState.x;
                     const y = detectState.y;
                     const scale = detectState.scale;
-                    const rz = detectState.rz; // поворот в плоскости экрана
+                    const rz = detectState.rz;
 
                     ctx.save();
                     ctx.translate(x, y);
-                    ctx.scale(-1, 1); // компенсируем зеркалирование canvas
+                    ctx.scale(-1, 1);
                     ctx.rotate(-rz);
-                    const s = scale * 0.8; // базовый масштаб
+                    const s = scale * 0.8;
 
                     ctx.strokeStyle = 'rgba(0,0,0,0.8)';
                     ctx.fillStyle = 'rgba(0,0,0,0.7)';
@@ -438,7 +439,6 @@
             });
         }
 
-        // Запуск камеры
         async function startCamera() {
             try {
                 const stream = await navigator.mediaDevices.getUserMedia({
@@ -459,7 +459,6 @@
 
         startCamera();
 
-        // Service Worker (для PWA)
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('/sw.js')
