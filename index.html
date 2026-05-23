@@ -11,7 +11,7 @@
             overflow: hidden;
             background: #000;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-            touch-action: manipulation; /* убирает зум при двойном тапе */
+            touch-action: manipulation;
         }
         #mirror-container {
             position: relative;
@@ -24,9 +24,9 @@
             position: absolute;
             width: 100%; height: 100%;
             object-fit: cover;
-            transform: scaleX(-1); /* зеркалим */
+            transform: scaleX(-1);
         }
-        /* Вспышка – текст на полсекунды */
+        /* Вспышка – текст */
         #flash-overlay {
             position: absolute;
             top: 50%; left: 50%;
@@ -125,6 +125,25 @@
             padding: 20px;
             border-radius: 16px;
         }
+        /* Ползунок скорости */
+        .speed-control {
+            position: absolute;
+            top: 80px;
+            right: 20px;
+            z-index: 40;
+            background: rgba(0,0,0,0.6);
+            padding: 10px 14px;
+            border-radius: 20px;
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            font-size: 0.8rem;
+        }
+        .speed-control input {
+            width: 120px;
+        }
     </style>
 </head>
 <body>
@@ -132,6 +151,12 @@
         <video id="video" autoplay playsinline muted></video>
         <div id="flash-overlay"></div>
         <div class="stats" id="stats">🔍 0 | ✅ 0 | 📱 0</div>
+
+        <!-- Ползунок длительности вспышки -->
+        <div class="speed-control">
+            <label for="flash-speed">⏱️ Вспышка (сек): <span id="speed-value">0.6</span></label>
+            <input type="range" id="flash-speed" min="0.2" max="2.0" step="0.1" value="0.6">
+        </div>
 
         <!-- Область касания = поднятие телефона -->
         <div id="lift-trigger"></div>
@@ -163,6 +188,9 @@
         // Текущая линза
         let currentLens = 'intention';
 
+        // Длительность вспышки в миллисекундах (по умолчанию 600 мс = 0.6 сек)
+        let flashDuration = 600;
+
         // Контент для линз
         const content = {
             intention: [
@@ -183,7 +211,7 @@
             ]
         };
 
-        // Таймер вспышки
+        // Таймеры
         let flashTimer = null;
         let actionsTimer = null;
 
@@ -202,7 +230,6 @@
         function triggerFlash() {
             if (flashTimer) return; // уже активна
 
-            // Выбрать случайный элемент из текущей линзы
             const items = content[currentLens];
             const text = items[Math.floor(Math.random() * items.length)];
 
@@ -211,15 +238,15 @@
             lifts++;
             updateStats();
 
-            // Убрать вспышку через 400 мс
+            // Убираем вспышку через заданную длительность
             flashTimer = setTimeout(() => {
                 flashOverlay.style.opacity = '0';
                 flashTimer = null;
 
-                // Показать кнопки выбора на 2 секунды
+                // Показываем кнопки на 2.5 секунды
                 postActions.classList.add('show');
                 actionsTimer = setTimeout(hideActions, 2500);
-            }, 400);
+            }, flashDuration);
         }
 
         // Обработчики кнопок выбора
@@ -245,8 +272,16 @@
                 lensButtons.forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
                 currentLens = btn.dataset.lens;
-                hideActions(); // скрываем кнопки, если были открыты
+                hideActions();
             });
+        });
+
+        // Ползунок регулировки скорости вспышки
+        const speedSlider = document.getElementById('flash-speed');
+        const speedValue = document.getElementById('speed-value');
+        speedSlider.addEventListener('input', (e) => {
+            flashDuration = parseFloat(e.target.value) * 1000;
+            speedValue.textContent = e.target.value;
         });
 
         // Запуск камеры
