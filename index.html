@@ -4,6 +4,12 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
     <title>Glimpse – зеркало осознанности</title>
+    <!-- PWA -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <link rel="apple-touch-icon" href="icon-192.png">
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         html, body {
@@ -20,13 +26,19 @@
             align-items: center;
             justify-content: center;
         }
-        video {
+        video, canvas {
             position: absolute;
             width: 100%; height: 100%;
             object-fit: cover;
-            transform: scaleX(-1);
+            transform: scaleX(-1); /* зеркалим */
         }
-        /* Вспышка – текст */
+        canvas {
+            z-index: 5; /* выше видео, но ниже оверлеев */
+        }
+        video {
+            z-index: 1;
+        }
+        /* Вспышка – текст (для немаскированных линз) */
         #flash-overlay {
             position: absolute;
             top: 50%; left: 50%;
@@ -90,6 +102,7 @@
             gap: 10px;
             justify-content: center;
             z-index: 30;
+            flex-wrap: wrap;
         }
         .lens-btn {
             background: rgba(255,255,255,0.2);
@@ -124,6 +137,7 @@
             background: rgba(0,0,0,0.8);
             padding: 20px;
             border-radius: 16px;
+            z-index: 50;
         }
         /* Ползунок скорости */
         .speed-control {
@@ -149,6 +163,7 @@
 <body>
     <div id="mirror-container">
         <video id="video" autoplay playsinline muted></video>
+        <canvas id="overlay-canvas"></canvas>
         <div id="flash-overlay"></div>
         <div class="stats" id="stats">🔍 0 | ✅ 0 | 📱 0</div>
 
@@ -172,11 +187,17 @@
             <button class="lens-btn active" data-lens="intention">✨ Намерение</button>
             <button class="lens-btn" data-lens="knowledge">📚 Знания</button>
             <button class="lens-btn" data-lens="anchor">❤️ Якорь</button>
+            <button class="lens-btn" data-lens="masks">😊 Маски</button>
         </div>
     </div>
 
+    <!-- Jeeliz FaceFilter -->
+    <script src="https://cdn.jsdelivr.net/npm/jeeliz-facefilter@latest/dist/jeelizFaceFilter.js"></script>
+
     <script>
         const video = document.getElementById('video');
+        const canvas = document.getElementById('overlay-canvas');
+        const ctx = canvas.getContext('2d');
         const flashOverlay = document.getElementById('flash-overlay');
         const postActions = document.getElementById('post-actions');
         const statsDiv = document.getElementById('stats');
@@ -188,10 +209,19 @@
         // Текущая линза
         let currentLens = 'intention';
 
-        // Длительность вспышки в миллисекундах (по умолчанию 600 мс = 0.6 сек)
+        // Длительность вспышки в миллисекундах
         let flashDuration = 600;
 
-        // Контент для линз
+        // Флаги и таймеры
+        let flashTimer = null;
+        let actionsTimer = null;
+        let isFlashActive = false;
+
+        // Для Jeeliz
+        let faceFilterReady = false;
+        const MASK_TYPES = ['glasses', 'mustache', 'bunny_ears', 'hat', 'clown_nose'];
+
+        // Контент для текстовых линз
         const content = {
             intention: [
                 "Я спокоен", "Я всё успеваю", "Мне хватает времени",
@@ -211,11 +241,7 @@
             ]
         };
 
-        // Таймеры
-        let flashTimer = null;
-        let actionsTimer = null;
-
-        // Обновление статистики на экране
+        // Обновление статистики
         function updateStats() {
             statsDiv.textContent = `🔍 ${lifts} | ✅ ${accepts} | 📱 ${unlocks}`;
         }
@@ -230,26 +256,42 @@
         function triggerFlash() {
             if (flashTimer) return; // уже активна
 
-            const items = content[currentLens];
-            const text = items[Math.floor(Math.random() * items.length)];
-
-            flashOverlay.textContent = text;
-            flashOverlay.style.opacity = '1';
             lifts++;
             updateStats();
 
-            // Убираем вспышку через заданную длительность
+            // Если активна линза масок — включаем отрисовку маски на время вспышки
+            if (currentLens === 'masks') {
+                if (!faceFilterReady) {
+                    initFaceFilter();
+                }
+                isFlashActive = true;
+                window._flashMaskType = null; // сброс, чтобы выбрать новую маску
+                flashTimer = setTimeout(() => {
+                    isFlashActive = false;
+                    flashTimer = null;
+                    postActions.classList.add('show');
+                    actionsTimer = setTimeout(hideActions, 2500);
+                }, flashDuration);
+                return;
+            }
+
+            // Текстовые линзы
+            const items = content[currentLens];
+            if (items) {
+                const text = items[Math.floor(Math.random() * items.length)];
+                flashOverlay.textContent = text;
+                flashOverlay.style.opacity = '1';
+            }
+
             flashTimer = setTimeout(() => {
                 flashOverlay.style.opacity = '0';
                 flashTimer = null;
-
-                // Показываем кнопки на 2.5 секунды
                 postActions.classList.add('show');
                 actionsTimer = setTimeout(hideActions, 2500);
             }, flashDuration);
         }
 
-        // Обработчики кнопок выбора
+        // Обработчики кнопок после вспышки
         document.getElementById('btn-accept').addEventListener('click', (e) => {
             e.stopPropagation();
             accepts++;
@@ -263,26 +305,138 @@
             hideActions();
         });
 
-        // Касание области "поднятия"
+        // Касание невидимой области — вызов вспышки
         document.getElementById('lift-trigger').addEventListener('click', triggerFlash);
 
-        // Смена линз
+        // Переключение линз
         lensButtons.forEach(btn => {
             btn.addEventListener('click', () => {
                 lensButtons.forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
                 currentLens = btn.dataset.lens;
                 hideActions();
+                // Если выбрали маски и трекер ещё не запущен — инициализируем
+                if (currentLens === 'masks' && !faceFilterReady) {
+                    initFaceFilter();
+                }
             });
         });
 
-        // Ползунок регулировки скорости вспышки
+        // Ползунок регулировки длительности вспышки
         const speedSlider = document.getElementById('flash-speed');
         const speedValue = document.getElementById('speed-value');
         speedSlider.addEventListener('input', (e) => {
             flashDuration = parseFloat(e.target.value) * 1000;
             speedValue.textContent = e.target.value;
         });
+
+        // Инициализация Jeeliz FaceFilter и программная отрисовка масок
+        function initFaceFilter() {
+            if (faceFilterReady) return;
+            canvas.width = video.videoWidth || 640;
+            canvas.height = video.videoHeight || 480;
+
+            JeelizFaceFilter.init({
+                canvas: canvas,
+                video: video,
+                callbackReady: function(errCode, spec) {
+                    if (errCode) {
+                        console.error('JeelizFaceFilter error:', errCode);
+                        return;
+                    }
+                    faceFilterReady = true;
+                    console.log('FaceFilter готов');
+                },
+                callbackTrack: function(detectState) {
+                    ctx.clearRect(0, 0, canvas.width, canvas.height);
+                    if (!isFlashActive || !detectState || MASK_TYPES.length === 0) {
+                        window._flashMaskType = null;
+                        return;
+                    }
+
+                    // Выбираем тип маски один раз за вспышку
+                    if (!window._flashMaskType) {
+                        window._flashMaskType = MASK_TYPES[Math.floor(Math.random() * MASK_TYPES.length)];
+                    }
+                    const maskType = window._flashMaskType;
+
+                    const x = detectState.x;
+                    const y = detectState.y;
+                    const scale = detectState.scale;
+                    const rz = detectState.rz; // поворот в плоскости экрана
+
+                    ctx.save();
+                    ctx.translate(x, y);
+                    ctx.scale(-1, 1); // компенсируем зеркалирование canvas
+                    ctx.rotate(-rz);
+                    const s = scale * 0.8; // базовый масштаб
+
+                    ctx.strokeStyle = 'rgba(0,0,0,0.8)';
+                    ctx.fillStyle = 'rgba(0,0,0,0.7)';
+                    ctx.lineWidth = 3 * s;
+
+                    switch(maskType) {
+                        case 'glasses':
+                            const eyeOffsetX = 0.25 * s * canvas.width;
+                            const eyeY = -0.1 * s * canvas.height;
+                            const eyeRadius = 0.12 * s * canvas.width;
+                            ctx.beginPath();
+                            ctx.arc(-eyeOffsetX, eyeY, eyeRadius, 0, Math.PI*2);
+                            ctx.stroke();
+                            ctx.beginPath();
+                            ctx.arc(eyeOffsetX, eyeY, eyeRadius, 0, Math.PI*2);
+                            ctx.stroke();
+                            ctx.beginPath();
+                            ctx.moveTo(-eyeOffsetX - eyeRadius, eyeY);
+                            ctx.lineTo(eyeOffsetX + eyeRadius, eyeY);
+                            ctx.stroke();
+                            break;
+                        case 'mustache':
+                            ctx.beginPath();
+                            ctx.moveTo(-0.2 * s * canvas.width, 0.1 * s * canvas.height);
+                            ctx.quadraticCurveTo(0, 0.25 * s * canvas.height, 0.2 * s * canvas.width, 0.1 * s * canvas.height);
+                            ctx.stroke();
+                            ctx.beginPath();
+                            ctx.arc(-0.1 * s * canvas.width, 0.08 * s * canvas.height, 0.03 * s * canvas.width, 0, Math.PI);
+                            ctx.stroke();
+                            ctx.beginPath();
+                            ctx.arc(0.1 * s * canvas.width, 0.08 * s * canvas.height, 0.03 * s * canvas.width, 0, Math.PI);
+                            ctx.stroke();
+                            break;
+                        case 'bunny_ears':
+                            ctx.save();
+                            ctx.translate(0, -0.35 * s * canvas.height);
+                            ctx.scale(1, 1.8);
+                            ctx.beginPath();
+                            ctx.ellipse(-0.15 * s * canvas.width, 0, 0.07 * s * canvas.width, 0.15 * s * canvas.height, 0, 0, Math.PI*2);
+                            ctx.stroke();
+                            ctx.beginPath();
+                            ctx.ellipse(0.15 * s * canvas.width, 0, 0.07 * s * canvas.width, 0.15 * s * canvas.height, 0, 0, Math.PI*2);
+                            ctx.stroke();
+                            ctx.restore();
+                            break;
+                        case 'hat':
+                            ctx.fillStyle = 'rgba(50,50,50,0.9)';
+                            const hatWidth = 0.35 * s * canvas.width;
+                            const hatHeight = 0.25 * s * canvas.height;
+                            const hatY = -0.45 * s * canvas.height;
+                            ctx.fillRect(-hatWidth/2, hatY, hatWidth, hatHeight);
+                            ctx.fillRect(-hatWidth/2 - 10*s, hatY + hatHeight - 5*s, hatWidth + 20*s, 8*s);
+                            break;
+                        case 'clown_nose':
+                            ctx.fillStyle = 'red';
+                            ctx.beginPath();
+                            ctx.arc(0, 0.05 * s * canvas.height, 0.08 * s * canvas.width, 0, Math.PI*2);
+                            ctx.fill();
+                            ctx.strokeStyle = 'black';
+                            ctx.lineWidth = 2;
+                            ctx.stroke();
+                            break;
+                    }
+                    ctx.restore();
+                }
+            });
+        }
 
         // Запуск камеры
         async function startCamera() {
@@ -292,13 +446,27 @@
                     audio: false
                 });
                 video.srcObject = stream;
+                video.onloadedmetadata = () => {
+                    canvas.width = video.videoWidth;
+                    canvas.height = video.videoHeight;
+                };
             } catch (err) {
                 console.error(err);
                 document.getElementById('mirror-container').innerHTML += 
                     '<div class="hidden-camera-warning">Не удалось получить доступ к камере. Разрешите камеру и обновите страницу.<br>Работает только по HTTPS или localhost.</div>';
             }
         }
+
         startCamera();
+
+        // Service Worker (для PWA)
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => {
+                navigator.serviceWorker.register('/sw.js')
+                    .then(reg => console.log('SW registered'))
+                    .catch(err => console.log('SW failed', err));
+            });
+        }
     </script>
 </body>
 </html>
